@@ -26,12 +26,9 @@
     public class CruiseServerControlTask
         : TaskBase, IConfigurationValidation
     {
-        #region Private fields
         private List<string> cachedProjects = new List<string>();
-        #endregion
 
         #region Public properties
-        #region Server
         /// <summary>
         /// The server to send the commands to.
         /// </summary>
@@ -39,9 +36,7 @@
         /// <default>n/a</default>
         [ReflectorProperty("server", Required = false)]
         public string Server { get; set; }
-        #endregion
-
-        #region Actions
+        
         /// <summary>
         /// The actions to perform.
         /// </summary>
@@ -49,22 +44,30 @@
         /// <default>n/a</default>
         [ReflectorProperty("actions", Required = true)]
         public CruiseServerControlTaskAction[] Actions { get; set; }
-        #endregion
-
-        #region ClientFactory
+        
         /// <summary>
         /// The client factory to use.
         /// </summary>
         public ICruiseServerClientFactory ClientFactory { get; set; }
-        #endregion
-
-        #region Logger
+        
         /// <summary>
         /// Gets or sets the logger.
         /// </summary>
         /// <value>The logger.</value>
         public ILogger Logger { get; set; }
-        #endregion
+
+        /// <summary>
+        /// The security credentials to pass through to the remote server.
+        /// </summary>
+        /// <version>1.5</version>
+        /// <default>None</default>
+        /// <remarks>
+        /// These are only needed if the remote project has security applied. If credentials are passed to the remote
+        /// server, then the enforcerName will be ignored.
+        /// Valid security tokens are: "username" and "password" (this list may be expanded in future).
+        /// </remarks>
+        [ReflectorProperty("security", Required = false)]
+        public NameValuePair[] SecurityCredentials { get; set; }
         #endregion
 
         #region Public methods
@@ -105,6 +108,22 @@
             // Initialise the client and cache the project names
             logger.Debug("Initialising client");
             var client = factory.GenerateClient(Server ?? "tcp://localhost:21234");
+            
+            var loggedIn = false;
+            if ((SecurityCredentials != null) && (SecurityCredentials.Length > 0))
+            {
+                logger.Debug("Logging in");
+                if (client.Login(new List<NameValuePair>(SecurityCredentials)))
+                {
+                    loggedIn = true;
+                    logger.Debug("Logged on server, session token is " + client.SessionToken);
+                }
+                else
+                {
+                    logger.Warning("Unable to login to remote server");
+                }
+            }
+
             this.CacheProjectNames(logger, client);
 
             // Perform each action
@@ -132,6 +151,12 @@
                 {
                     throw new CruiseControlException("Unknown action specified: " + action.Type.ToString());
                 }
+            }
+
+            if (loggedIn)
+            {
+                logger.Debug("Logging out");
+                client.Logout();
             }
 
             logger.Info("Server actions completed: " + count + " command(s) sent");
